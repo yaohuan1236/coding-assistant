@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codecat"
+version = "0.1.0"
+description = "码猫 CodeCat —— 面向中文开发者的轻量编程助手:定制技能包 + 定时自动评审 + 会话分支回退(基于 nanobot 构建)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "nanobot-ai>=0.4.1",
+    "rich>=13.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+codecat = "codecat.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

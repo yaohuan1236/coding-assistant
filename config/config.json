@@ -1,0 +1,20 @@
+{
+  "providers": {
+    "deepseek": {
+      "apiKey": "${DEEPSEEK_API_KEY}"
+    }
+  },
+  "modelPresets": {
+    "deepseek-flash": {
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "maxTokens": 8192,
+      "contextWindowTokens": 131072
+    }
+  },
+  "agents": {
+    "defaults": {
+      "modelPreset": "deepseek-flash"
+    }
+  }
+}
