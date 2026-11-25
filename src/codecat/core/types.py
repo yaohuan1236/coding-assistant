@@ -34,11 +34,11 @@ class ToolResult:
 
 @dataclass
 class Message:
-    """统一消息结构。
+    """统一消息结构。字段与角色的合法组合(构造时不合法直接报错):
 
-    - role="tool" 时必须携带 tool_call_id:OpenAI 兼容协议要求,
-      缺失会导致工具结果的回填请求被 provider 拒绝
-    - role="assistant" 且要求调用工具时,tool_calls 非空,content 可为 None
+    - role="tool":必须带 tool_call_id 与 content,不能带 tool_calls
+    - role="assistant":可带 tool_calls(此时 content 可为 None),不能带 tool_call_id
+    - role="system" / "user":两者都不能带
     """
 
     role: Role
@@ -48,8 +48,18 @@ class Message:
     tool_calls: list[ToolCall] | None = None
 
     def __post_init__(self) -> None:
-        if self.role == "tool" and not self.tool_call_id:
-            raise ValueError("role='tool' 的 Message 必须携带 tool_call_id")
+        if self.role == "tool":
+            if not self.tool_call_id:
+                raise ValueError("role='tool' 的 Message 必须携带 tool_call_id")
+            if self.tool_calls:
+                raise ValueError("role='tool' 的 Message 不能携带 tool_calls")
+            if self.content is None:
+                raise ValueError("role='tool' 的 Message 必须有 content")
+        else:
+            if self.tool_calls and self.role != "assistant":
+                raise ValueError("只有 role='assistant' 的 Message 可以携带 tool_calls")
+            if self.tool_call_id:
+                raise ValueError("只有 role='tool' 的 Message 可以携带 tool_call_id")
 
 
 @dataclass
