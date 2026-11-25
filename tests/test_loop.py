@@ -200,6 +200,68 @@ def test_llm_error_is_not_swallowed() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Tool 日志:旁路观察,不改变控制流
+# ---------------------------------------------------------------------------
+
+def test_direct_answer_has_no_tool_logs(capsys: pytest.CaptureFixture[str]) -> None:
+    fake = FakeLLM([LLMResponse(content="你好,我是码猫。")])
+    agent = AgentLoop(fake, FakeToolRegistry())
+
+    asyncio.run(agent.run("你好"))
+
+    out = capsys.readouterr().out
+    assert "[Tool]" not in out
+    assert "[Args]" not in out
+
+
+def test_tool_call_logs_name_args_and_success(capsys: pytest.CaptureFixture[str]) -> None:
+    call = ToolCall(id="call_1", name="read_file", arguments={"path": "a.txt"})
+    fake = FakeLLM([LLMResponse(tool_calls=[call]), LLMResponse(content="完成")])
+    agent = AgentLoop(fake, FakeToolRegistry(), max_steps=3)
+
+    answer = asyncio.run(agent.run("读文件"))
+
+    assert answer == "完成"
+    out = capsys.readouterr().out
+    assert "[Tool] read_file" in out
+    assert '[Args] {"path": "a.txt"}' in out
+    assert "[Tool] success" in out
+    assert "[Tool] error" not in out
+
+
+def test_tool_error_logs_error_and_agent_continues(capsys: pytest.CaptureFixture[str]) -> None:
+    call = ToolCall(id="call_1", name="read_file", arguments={"path": "missing.txt"})
+    fake = FakeLLM(
+        [LLMResponse(tool_calls=[call]), LLMResponse(content="文件不存在,我换个办法")]
+    )
+    registry = FakeToolRegistry()
+    registry.results["read_file"] = ToolResult(
+        tool_call_id="call_1", content="文件不存在: missing.txt", is_error=True
+    )
+    agent = AgentLoop(fake, registry, max_steps=3)
+
+    answer = asyncio.run(agent.run("读 missing.txt"))
+
+    assert answer == "文件不存在,我换个办法"
+    out = capsys.readouterr().out
+    assert "[Tool] error" in out
+    assert "Traceback" not in out
+
+
+def test_multiple_tool_calls_log_separately(capsys: pytest.CaptureFixture[str]) -> None:
+    calls = [ToolCall(id="c1", name="tool_a"), ToolCall(id="c2", name="tool_b")]
+    fake = FakeLLM([LLMResponse(tool_calls=calls), LLMResponse(content="完成")])
+    agent = AgentLoop(fake, FakeToolRegistry(), max_steps=2)
+
+    asyncio.run(agent.run("调两个工具"))
+
+    out = capsys.readouterr().out
+    assert "[Tool] tool_a" in out
+    assert "[Tool] tool_b" in out
+    assert out.count("[Tool] success") == 2  # 每个 ToolCall 各一条状态
+
+
+# ---------------------------------------------------------------------------
 # 契约细节
 # ---------------------------------------------------------------------------
 

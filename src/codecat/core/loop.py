@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import json
 from typing import Any, Protocol, runtime_checkable
 
 from codecat.core.types import LLMClient, Message, ToolCall, ToolResult
@@ -84,7 +85,9 @@ class AgentLoop:
 
             # 第一版严格串行:写类工具并发执行会引发工作区竞态
             for tool_call in response.tool_calls:
+                self._log_tool_call(tool_call)
                 result = await self._tool_registry.execute(tool_call)
+                self._log_tool_result(result)
                 messages.append(
                     Message(
                         role="tool",
@@ -96,6 +99,17 @@ class AgentLoop:
         raise AgentMaxStepsError(
             f"达到最大步数限制(max_steps={self._max_steps}),Agent 已终止"
         )
+
+    @staticmethod
+    def _log_tool_call(tool_call: ToolCall) -> None:
+        """终端可见的 Tool 调用日志:名称 + 参数。只做格式化,不解析 Provider JSON。"""
+        print(f"[Tool] {tool_call.name}")
+        print(f"[Args] {json.dumps(tool_call.arguments, ensure_ascii=False, default=str)}")
+
+    @staticmethod
+    def _log_tool_result(result: ToolResult) -> None:
+        """只打印执行状态;不打印完整内容(可能是长文件)。"""
+        print(f"[Tool] {'error' if result.is_error else 'success'}")
 
     def _build_initial_messages(self, user_input: str) -> list[Message]:
         """system prompt(如有)+ user 消息;未配置时不留空 system 消息。"""
