@@ -10,8 +10,8 @@ import time
 from typing import Any
 
 from codecat.core.llm import LLMError, OpenAICompatibleClient, load_llm_config
-from codecat.core.types import LLMResponse, Message
-from codecat.loop import Agent
+from codecat.core.loop import AgentLoop
+from codecat.core.types import LLMResponse, Message, ToolCall, ToolResult
 
 
 class TracingLLM:
@@ -41,17 +41,28 @@ class TracingLLM:
         return response
 
 
+class NoToolsRegistry:
+    """演示脚本用:没有注册任何工具。"""
+
+    def schemas(self) -> list[dict[str, Any]]:
+        return []
+
+    async def execute(self, call: ToolCall) -> ToolResult:
+        raise RuntimeError(f"演示环境没有注册工具,无法执行 {call.name!r}")
+
+
 async def main() -> None:
     print("[1] 加载配置:config/config.json + .env")
     config = load_llm_config()
     print(f"    model={config.model}  base_url={config.base_url}  "
           f"api_key=已读取({len(config.api_key)} 字符,不回显)")
 
-    print("[2] 构造 Agent(system_prompt + max_steps)")
-    agent = Agent(
+    print("[2] 构造 AgentLoop(空工具注册表 + max_steps=4)")
+    agent = AgentLoop(
         TracingLLM(OpenAICompatibleClient(config)),
-        system_prompt="你是简洁的中文编程助手,回答不超过 30 字。",
+        NoToolsRegistry(),
         max_steps=4,
+        system_prompt="你是简洁的中文编程助手,回答不超过 30 字。",
     )
 
     print("[3] agent.run() → 追加 user 消息 → BUILD 完成 → CALL")
@@ -59,7 +70,6 @@ async def main() -> None:
 
     print("[4] 没有 tool_calls → loop 直接返回最终回答,本回合结束")
     print("    最终回答:", answer)
-    print("    历史消息:", [m.role for m in agent.messages])
 
 
 if __name__ == "__main__":

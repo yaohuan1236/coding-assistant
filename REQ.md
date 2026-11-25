@@ -52,7 +52,9 @@
 - [ ] 自动任务的调度方式与推送渠道
 - [ ] CLI 命令集与交互设计
 - [x] 分支/回退设计 → 自研后成为自然扩展:会话树数据结构从第一天预留(树节点=会话快照),第 1 版单链即可
+- [x] ToolRegistry 契约位置 → 第 1 版临时定义在 loop.py;实现 core/tools/registry.py 时迁移为该处唯一权威定义,loop 改为从那里导入(2026-11-25 定)
 - [ ] 面试叙事与 README 结构
+- [ ] Tool schema 获取时机:loop 目前每 Step 调一次 schemas();真实 registry 落地后按静态/动态决定——静态优先 registry 内部缓存(或在 run 开头快照),动态保持每 Step 调用
 
 ## 7. 进度记录
 
