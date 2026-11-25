@@ -52,7 +52,7 @@
 - [ ] 自动任务的调度方式与推送渠道
 - [ ] CLI 命令集与交互设计
 - [x] 分支/回退设计 → 自研后成为自然扩展:会话树数据结构从第一天预留(树节点=会话快照),第 1 版单链即可
-- [x] ToolRegistry 契约位置 → 第 1 版临时定义在 loop.py;实现 core/tools/registry.py 时迁移为该处唯一权威定义,loop 改为从那里导入(2026-11-25 定)
+- [x] ToolRegistry 契约位置 → 第 1 版保留在 loop.py(工具任务书 §18 要求不改 loop);DefaultToolRegistry 以结构化方式满足该协议,全项目仍只有一份契约定义;待出现接口冲突或工具系统稳定后再迁移(2026-11-25 二次确认)
 - [ ] 面试叙事与 README 结构
 - [ ] Tool schema 获取时机:loop 目前每 Step 调一次 schemas();真实 registry 落地后按静态/动态决定——静态优先 registry 内部缓存(或在 run 开头快照),动态保持每 Step 调用
 
@@ -61,5 +61,5 @@
 | 日期 | 进展 |
 |---|---|
 | 2026-11-24 | 需求讨论定大方向;建目录与 git 仓库;Python 3.13.9 环境确认;项目骨架(pyproject/setuptools、src 布局、config/config.json、scripts/demo.py);`.venv` 安装 nanobot-ai 0.4.2;SDK 端到端验证通过(deepseek-flash 工具调用链,19 个工具注册,hello.txt 落盘);首次提交 a1c2847;`.env` 存真实 key 且已 gitignore;推送公开仓库 https://github.com/yaohuan1236/coding-assitant(用户手动建仓,名字拼写 assitant,可后续改名) |
-| 2026-11-25 | 自研核心第一层:core/types.py(数据契约)、core/llm.py(httpx 直连 OpenAI 兼容接口、config.json+.env 加载、双向转换、明确异常)、loop.py(最小 ReAct 循环、注入式工具入口、max_steps)、tests/test_loop.py(6 个离线测试全过)、scripts/smoke_llm.py(真实 DeepSeek 冒烟通过);异步实现(asyncio+httpx,按第 3 节锁定);config.json 增 baseUrl;pytest 入 dev 依赖 |
+| 2026-11-25 | 自研核心第一层:core/types.py(数据契约)、core/llm.py(httpx 直连 OpenAI 兼容接口、config.json+.env 加载、双向转换、明确异常)、loop.py(最小 ReAct 循环、注入式工具入口、max_steps)、tests/test_loop.py(6 个离线测试全过)、scripts/smoke_llm.py(真实 DeepSeek 冒烟通过);异步实现(asyncio+httpx,按第 3 节锁定);config.json 增 baseUrl;pytest 入 dev 依赖;工具系统 v1:core/tools/(Tool 协议、DefaultToolRegistry、ReadFileTool),59 测试全过,真实 DeepSeek 端到端调用 read_file 成功;CLI 接线完成(配置→LLMClient→ToolRegistry→AgentLoop→交互循环 + 可读错误),66 测试全过,codecat 命令真实运行成功;AgentLoop 增加 Tool 调用旁路日志([Tool]/[Args]/success 或 error),70 测试全过;新增 list_files 工具([FILE]/[DIR]、稳定排序、空目录与错误处理),77 测试全过;Workspace 文件访问边界(core/workspace.py,越界统一转 ToolResult),read_file/list_files 注入同一边界,92 测试全过 |
 
