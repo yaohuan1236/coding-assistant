@@ -89,11 +89,21 @@ def load_llm_config(config_path: str | Path | None = None) -> LLMConfig:
     if not base_url:
         raise ConfigError(f"provider {provider_name!r} 未配置 baseUrl")
 
+    # 预设里所有可调的生成参数都在这里统一读取,键名沿用现有 camelCase 风格
+    try:
+        max_tokens = int(preset.get("maxTokens", 4096))
+        temperature = float(preset.get("temperature", 1.0))
+        request_timeout = float(preset.get("requestTimeout", 120.0))
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"模型预设 {preset_name!r} 的数值字段不合法:{exc}") from exc
+
     return LLMConfig(
         model=model,
         base_url=base_url,
         api_key=api_key,
-        max_tokens=int(preset.get("maxTokens", 4096)),
+        temperature=temperature,
+        max_tokens=max_tokens,
+        request_timeout=request_timeout,
     )
 
 
@@ -111,11 +121,18 @@ def _resolve_env_ref(value: str) -> str:
 class OpenAICompatibleClient:
     """基于 httpx 的 OpenAI 兼容 Chat Completions 客户端(DeepSeek 使用同一协议)。
 
+    结构上实现 types.LLMClient 协议(不继承,契约由 tests/test_types.py 运行期校验)。
     第一版只实现非流式 complete();流式接口留给接 TUI 时再扩展。
     """
 
-    def __init__(self, config: LLMConfig) -> None:
+    def __init__(
+        self,
+        config: LLMConfig,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        """transport 可选注入:测试用 httpx.MockTransport,生产留空走默认网络传输。"""
         self._config = config
+        self._transport = transport
 
     async def complete(
         self,
@@ -137,7 +154,9 @@ class OpenAICompatibleClient:
         url = f"{self._config.base_url}/chat/completions"
         headers = {"Authorization": f"Bearer {self._config.api_key}"}
         try:
-            async with httpx.AsyncClient(timeout=self._config.request_timeout) as client:
+            async with httpx.AsyncClient(
+                timeout=self._config.request_timeout, transport=self._transport
+            ) as client:
                 response = await client.post(url, json=payload, headers=headers)
         except httpx.HTTPError as exc:
             raise LLMCallError(f"LLM 请求失败:{type(exc).__name__}: {exc}") from exc
@@ -186,18 +205,51 @@ def to_provider_messages(messages: Sequence[Message]) -> list[dict[str, Any]]:
 
 
 def parse_response(data: dict[str, Any]) -> LLMResponse:
-    """provider 响应 dict → LLMResponse。tool arguments 在此解析为 dict。"""
-    try:
-        message = data["choices"][0]["message"]
-    except (KeyError, IndexError, TypeError) as exc:
-        raise LLMCallError(f"LLM 响应缺少 choices[0].message:{str(data)[:300]}") from exc
+    """provider 响应 dict → LLMResponse。
+
+    响应外壳结构非法(data/choices/choice/message/tool_calls 类型不对)抛
+    LLMCallError;tool_call 内容非法(缺 id / 缺 function.name / arguments
+    非 JSON 对象)抛 ToolCallParseError。两者都属于 LLMError,
+    由 loop 统一转为可读错误,不允许 AttributeError 之类的裸异常穿出。
+    """
+    if not isinstance(data, dict):
+        raise LLMCallError(f"LLM 响应不是 JSON 对象:{str(data)[:200]}")
+
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise LLMCallError(f"LLM 响应缺少 choices 列表:{str(data)[:300]}")
+
+    choice = choices[0]
+    if not isinstance(choice, dict):
+        raise LLMCallError(f"choices[0] 不是对象:{str(choice)[:200]}")
+
+    message = choice.get("message")
+    if not isinstance(message, dict):
+        raise LLMCallError(f"LLM 响应缺少 message 对象:{str(choice)[:300]}")
+
+    raw_tool_calls = message.get("tool_calls")
+    if raw_tool_calls is not None and not isinstance(raw_tool_calls, list):
+        raise LLMCallError(f"tool_calls 不是列表:{str(raw_tool_calls)[:200]}")
 
     tool_calls: list[ToolCall] = []
-    for raw in message.get("tool_calls") or []:
-        function = raw.get("function") or {}
-        name = function.get("name", "")
+    for raw in raw_tool_calls or []:
+        if not isinstance(raw, dict):
+            raise LLMCallError(f"tool_call 不是对象:{str(raw)[:200]}")
+
+        call_id = raw.get("id")
+        if not isinstance(call_id, str) or not call_id.strip():
+            raise ToolCallParseError(f"provider 返回的 tool_call 缺少合法 id:{str(raw)[:200]}")
+
+        function = raw.get("function")
+        if not isinstance(function, dict):
+            raise LLMCallError(f"tool_call {call_id!r} 的 function 不是对象")
+
+        name = function.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise ToolCallParseError(f"tool_call {call_id!r} 缺少合法 function.name")
+
         arguments = _parse_tool_arguments(name, function.get("arguments", "{}"))
-        tool_calls.append(ToolCall(id=raw.get("id", ""), name=name, arguments=arguments))
+        tool_calls.append(ToolCall(id=call_id, name=name, arguments=arguments))
 
     usage = None
     raw_usage = data.get("usage")

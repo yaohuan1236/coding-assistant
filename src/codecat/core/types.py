@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, runtime_checkable
 
 Role = Literal["system", "user", "assistant", "tool"]
 """消息角色,与 OpenAI 兼容协议一致。"""
@@ -36,6 +36,7 @@ class ToolResult:
 class Message:
     """统一消息结构。字段与角色的合法组合(构造时不合法直接报错):
 
+    - tool_calls 恒为列表,空列表 [] 表示"没有工具调用",不使用 None
     - role="tool":必须带 tool_call_id 与 content,不能带 tool_calls
     - role="assistant":可带 tool_calls(此时 content 可为 None),不能带 tool_call_id
     - role="system" / "user":两者都不能带
@@ -45,7 +46,7 @@ class Message:
     content: str | None = None
     name: str | None = None
     tool_call_id: str | None = None
-    tool_calls: list[ToolCall] | None = None
+    tool_calls: list[ToolCall] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.role == "tool":
@@ -73,15 +74,19 @@ class Usage:
 
 @dataclass
 class LLMResponse:
-    """一次 LLM 调用的结构化结果(content 与 tool_calls 至少一个非空)。"""
+    """一次 LLM 调用的结构化结果。正常响应通常包含 content 或 tool_calls;
+    两者皆空不视为类型错误,由调用方处理。"""
 
     content: str | None = None
     tool_calls: list[ToolCall] = field(default_factory=list)
     usage: Usage | None = None
 
     def to_message(self) -> Message:
-        """转成可追加进历史消息的 assistant 消息。"""
-        return Message(role="assistant", content=self.content, tool_calls=self.tool_calls or None)
+        """转成可追加进历史消息的 assistant 消息。
+
+        tool_calls 复制一份,避免 Message 与 LLMResponse 共享同一个可变列表。
+        """
+        return Message(role="assistant", content=self.content, tool_calls=list(self.tool_calls))
 
 
 @dataclass
@@ -96,8 +101,14 @@ class LLMConfig:
     request_timeout: float = 120.0
 
 
+@runtime_checkable
 class LLMClient(Protocol):
-    """LLM 客户端接口。loop.py 只依赖此协议,不依赖任何具体实现。"""
+    """LLM 客户端接口。loop.py 只依赖此协议,不依赖任何具体实现。
+
+    结构型协议:实现方无需继承,只要提供匹配的 async complete 即可;
+    运行期可用 isinstance(client, LLMClient) 校验,
+    契约由 tests/test_types.py 对真实客户端与 Fake 客户端分别断言。
+    """
 
     async def complete(
         self,

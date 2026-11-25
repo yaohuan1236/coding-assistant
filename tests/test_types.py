@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from codecat.core.types import Message, ToolCall
+from codecat.core.llm import OpenAICompatibleClient
+from codecat.core.types import LLMClient, LLMConfig, Message, ToolCall
 
 
 # ---------------------------------------------------------------------------
@@ -56,3 +57,31 @@ def test_valid_message_shapes_are_accepted() -> None:
     Message(role="assistant", content="回答")
     Message(role="assistant", content=None, tool_calls=[ToolCall(id="c1", name="echo")])
     Message(role="tool", content="结果", tool_call_id="c1")
+
+
+def test_message_tool_calls_defaults_to_empty_list() -> None:
+    # "没有工具调用"只有一种表示:[]
+    assert Message(role="user", content="hi").tool_calls == []
+    # 省略 tool_calls 与显式传空列表完全等价
+    assert Message(role="assistant", content="ok") == Message(
+        role="assistant", content="ok", tool_calls=[]
+    )
+
+
+# ---------------------------------------------------------------------------
+# LLMClient 协议契约:结构型实现,无需继承
+# ---------------------------------------------------------------------------
+
+def test_llm_clients_satisfy_protocol() -> None:
+    config = LLMConfig(model="deepseek-flash", base_url="https://example.invalid", api_key="test")
+
+    # 注解显式表达"这就是协议实现"(将来接静态检查工具时会被校验)
+    client: LLMClient = OpenAICompatibleClient(config)
+    assert isinstance(client, LLMClient)
+
+    class Fake:
+        async def complete(self, messages, tools=None):
+            ...
+
+    assert isinstance(Fake(), LLMClient)        # 测试替身满足同一协议
+    assert not isinstance(object(), LLMClient)  # 反向断言,证明校验不是空转
