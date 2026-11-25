@@ -1,7 +1,8 @@
 {
   "providers": {
     "deepseek": {
-      "apiKey": "${DEEPSEEK_API_KEY}"
+      "apiKey": "${DEEPSEEK_API_KEY}",
+      "baseUrl": "https://api.deepseek.com"
     }
   },
   "modelPresets": {
